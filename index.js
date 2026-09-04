@@ -77,7 +77,6 @@ async function run() {
             ],
           };
         } else {
-          // If no email query is specified, return all added cars
           query = {
             $or: [{ isUserAdded: true }, { userEmail: { $exists: true } }],
           };
@@ -85,7 +84,6 @@ async function run() {
 
         let cars = await carCollection.find(query).sort({ createdAt: -1 }).toArray();
 
-        // Fallback: If no specific cars matched query, return all stored cars in collection
         if (!cars || cars.length === 0) {
           cars = await carCollection.find({}).sort({ createdAt: -1 }).toArray();
         }
@@ -106,7 +104,6 @@ async function run() {
         let query = {};
         const conditions = [];
 
-        // Exclude user-added cars from Home page if featured/home is requested
         if (featured === "true" || home === "true") {
           conditions.push({ isUserAdded: { $ne: true } });
         }
@@ -169,6 +166,48 @@ async function run() {
 
     app.get("/cars/:id", handleGetSingleCar);
     app.get("/api/cars/:id", handleGetSingleCar);
+
+    // PATCH/PUT /cars/:id or /api/cars/:id — Update vehicle details by ID
+    const handleUpdateCar = async (req, res) => {
+      try {
+        const { id } = req.params;
+        const updateData = req.body;
+
+        let query = {};
+        if (ObjectId.isValid(id)) {
+          query = { _id: new ObjectId(id) };
+        } else {
+          query = { id: id };
+        }
+
+        const updateDoc = {
+          $set: {
+            ...updateData,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+
+        const result = await carCollection.updateOne(query, updateDoc);
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ success: false, message: "Vehicle not found" });
+        }
+
+        const updatedCar = await carCollection.findOne(query);
+        res.json({
+          success: true,
+          message: "Vehicle updated successfully",
+          data: updatedCar,
+        });
+      } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    };
+
+    app.patch("/cars/:id", handleUpdateCar);
+    app.patch("/api/cars/:id", handleUpdateCar);
+    app.put("/cars/:id", handleUpdateCar);
+    app.put("/api/cars/:id", handleUpdateCar);
 
     // DELETE /cars/:id or /api/cars/:id — Delete vehicle by ID
     const handleDeleteCar = async (req, res) => {
