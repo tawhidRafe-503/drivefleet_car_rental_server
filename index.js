@@ -28,6 +28,7 @@ async function run() {
 
     const database = client.db("Drivefleet_Car_Platform");
     const carCollection = database.collection("car_info");
+    const userBookingCollection = database.collection("user_booking_info");
 
     // POST /cars or /api/cars — Create new vehicle
     const handleAddCar = async (req, res) => {
@@ -59,6 +60,86 @@ async function run() {
 
     app.post("/cars", handleAddCar);
     app.post("/api/cars", handleAddCar);
+
+    // POST /bookings or /api/bookings — Store new booking in database
+    const handleCreateBooking = async (req, res) => {
+      try {
+        const bookingData = req.body;
+        if (!bookingData.carId || !bookingData.renterEmail) {
+          return res.status(400).json({ success: false, message: "carId and renterEmail are required" });
+        }
+
+        const newBooking = {
+          ...bookingData,
+          status: bookingData.status || "Confirmed",
+          createdAt: bookingData.createdAt || bookingData.bookingDate || new Date().toISOString(),
+        };
+
+        const result = await userBookingCollection.insertOne(newBooking);
+        res.status(201).json({
+          success: true,
+          message: "Car booked successfully",
+          insertedId: result.insertedId,
+          data: newBooking,
+        });
+      } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    };
+
+    app.post("/bookings", handleCreateBooking);
+    app.post("/api/bookings", handleCreateBooking);
+
+    // GET /bookings or /api/bookings or /bookings/my-bookings — Get bookings for user
+    const handleGetBookings = async (req, res) => {
+      try {
+        const email = (req.query.email || req.query.renterEmail || "").trim();
+        let query = {};
+        if (email) {
+          query = {
+            $or: [
+              { renterEmail: email.toLowerCase() },
+              { renterEmail: email },
+              { userEmail: email.toLowerCase() },
+              { userEmail: email },
+            ],
+          };
+        }
+        const bookings = await userBookingCollection.find(query).sort({ createdAt: -1 }).toArray();
+        res.json(bookings);
+      } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    };
+
+    app.get("/bookings", handleGetBookings);
+    app.get("/api/bookings", handleGetBookings);
+    app.get("/bookings/my-bookings", handleGetBookings);
+    app.get("/api/bookings/my-bookings", handleGetBookings);
+
+    // DELETE /bookings/:id or /api/bookings/:id — Cancel/Delete booking
+    const handleDeleteBooking = async (req, res) => {
+      try {
+        const { id } = req.params;
+        let query = {};
+        if (ObjectId.isValid(id)) {
+          query = { _id: new ObjectId(id) };
+        } else {
+          query = { id: id };
+        }
+
+        const result = await userBookingCollection.deleteOne(query);
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ success: false, message: "Booking not found" });
+        }
+        res.json({ success: true, message: "Booking cancelled successfully" });
+      } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    };
+
+    app.delete("/bookings/:id", handleDeleteBooking);
+    app.delete("/api/bookings/:id", handleDeleteBooking);
 
     // GET /cars/my-cars or /api/cars/my-cars — GET API to retrieve added cars for the my-cars route
     const handleGetMyCars = async (req, res) => {
