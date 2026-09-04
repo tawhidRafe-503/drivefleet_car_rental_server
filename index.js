@@ -1,40 +1,112 @@
-const express = require('express')
-const dotenv = require('dotenv')
-const { MongoClient, ServerApiVersion } = require('mongodb');
-dotenv.config()
+const express = require("express");
+const cors = require("cors");
+const dotenv = require("dotenv");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
+dotenv.config();
 
-const uri =process.env.MONGODB_URI;
-const app = express()
-const port = process.env.PORT
+const app = express();
+const port = process.env.PORT || 5000;
 
+app.use(cors());
+app.use(express.json());
+
+const uri = process.env.MONGODB_URI;
 
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
-  }
+  },
 });
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
-    // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
-  } finally {
-    // Ensures that the client will close when you finish/error
-    await client.close();
+    console.log("Successfully connected to MongoDB!");
+
+    const database = client.db("Drivefleet_Car_Platform");
+    const carCollection = database.collection("car_info");
+
+    // POST /cars or /api/cars — Create new vehicle
+    const handleAddCar = async (req, res) => {
+      try {
+        const carData = req.body;
+        if (!carData.carName && !carData.model) {
+          return res.status(400).json({ success: false, message: "Car model/title is required" });
+        }
+
+        const newCar = {
+          ...carData,
+          carName: carData.carName || carData.model,
+          model: carData.model || carData.carName,
+          createdAt: carData.createdAt || new Date().toISOString(),
+        };
+
+        const result = await carCollection.insertOne(newCar);
+        res.status(201).json({
+          success: true,
+          message: "Vehicle added successfully",
+          insertedId: result.insertedId,
+          data: newCar,
+        });
+      } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    };
+
+    app.post("/cars", handleAddCar);
+    app.post("/api/cars", handleAddCar);
+
+    // GET /cars or /api/cars — Get all vehicles
+    const handleGetCars = async (req, res) => {
+      try {
+        const cars = await carCollection.find({}).toArray();
+        res.json(cars);
+      } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    };
+
+    app.get("/cars", handleGetCars);
+    app.get("/api/cars", handleGetCars);
+
+    // GET /cars/:id or /api/cars/:id — Get vehicle details by ID
+    const handleGetSingleCar = async (req, res) => {
+      try {
+        const { id } = req.params;
+        let query = {};
+        if (ObjectId.isValid(id)) {
+          query = { _id: new ObjectId(id) };
+        } else {
+          query = { id: id };
+        }
+
+        const car = await carCollection.findOne(query);
+        if (!car) {
+          return res.status(404).json({ success: false, message: "Vehicle not found" });
+        }
+        res.json(car);
+      } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    };
+
+    app.get("/cars/:id", handleGetSingleCar);
+    app.get("/api/cars/:id", handleGetSingleCar);
+
+    // Root ping route
+    app.get("/", (req, res) => {
+      res.send("DriveFleet Backend API is running smoothly!");
+    });
+  } catch (err) {
+    console.error("MongoDB Connection Error:", err);
   }
 }
+
 run().catch(console.dir);
 
-app.get('/', (req, res) => {
-  res.send('server is running fine')
-})
-
 app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`)
-})
+  console.log(`Server is running on http://localhost:${port}`);
+});
