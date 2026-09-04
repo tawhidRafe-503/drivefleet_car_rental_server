@@ -141,6 +141,48 @@ async function run() {
     app.delete("/bookings/:id", handleDeleteBooking);
     app.delete("/api/bookings/:id", handleDeleteBooking);
 
+    // PATCH/PUT /bookings/:id or /api/bookings/:id — Update booking details by ID
+    const handleUpdateBooking = async (req, res) => {
+      try {
+        const { id } = req.params;
+        const updateData = req.body;
+
+        let query = {};
+        if (ObjectId.isValid(id)) {
+          query = { _id: new ObjectId(id) };
+        } else {
+          query = { id: id };
+        }
+
+        const updateDoc = {
+          $set: {
+            ...updateData,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+
+        const result = await userBookingCollection.updateOne(query, updateDoc);
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ success: false, message: "Booking not found" });
+        }
+
+        const updatedBooking = await userBookingCollection.findOne(query);
+        res.json({
+          success: true,
+          message: "Booking updated successfully",
+          data: updatedBooking,
+        });
+      } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    };
+
+    app.patch("/bookings/:id", handleUpdateBooking);
+    app.patch("/api/bookings/:id", handleUpdateBooking);
+    app.put("/bookings/:id", handleUpdateBooking);
+    app.put("/api/bookings/:id", handleUpdateBooking);
+
     // GET /cars/my-cars or /api/cars/my-cars — GET API to retrieve added cars for the my-cars route
     const handleGetMyCars = async (req, res) => {
       try {
