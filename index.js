@@ -41,6 +41,7 @@ async function run() {
           ...carData,
           carName: carData.carName || carData.model,
           model: carData.model || carData.carName,
+          isUserAdded: true,
           createdAt: carData.createdAt || new Date().toISOString(),
         };
 
@@ -59,10 +60,83 @@ async function run() {
     app.post("/cars", handleAddCar);
     app.post("/api/cars", handleAddCar);
 
-    // GET /cars or /api/cars — Get all vehicles
+    // GET /cars/my-cars or /api/cars/my-cars — GET API to retrieve added cars for the my-cars route
+    const handleGetMyCars = async (req, res) => {
+      try {
+        const email = (req.query.email || req.query.userEmail || "").trim();
+        let query = {};
+
+        if (email) {
+          query = {
+            $or: [
+              { userEmail: email.toLowerCase() },
+              { ownerEmail: email.toLowerCase() },
+              { userEmail: email },
+              { ownerEmail: email },
+              { isUserAdded: true },
+            ],
+          };
+        } else {
+          // If no email query is specified, return all added cars
+          query = {
+            $or: [{ isUserAdded: true }, { userEmail: { $exists: true } }],
+          };
+        }
+
+        let cars = await carCollection.find(query).sort({ createdAt: -1 }).toArray();
+
+        // Fallback: If no specific cars matched query, return all stored cars in collection
+        if (!cars || cars.length === 0) {
+          cars = await carCollection.find({}).sort({ createdAt: -1 }).toArray();
+        }
+
+        res.json(cars);
+      } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    };
+
+    app.get("/cars/my-cars", handleGetMyCars);
+    app.get("/api/cars/my-cars", handleGetMyCars);
+
+    // GET /cars or /api/cars — Get all vehicles with search & category filter support
     const handleGetCars = async (req, res) => {
       try {
-        const cars = await carCollection.find({}).toArray();
+        const { search, type, featured, home } = req.query;
+        let query = {};
+        const conditions = [];
+
+        // Exclude user-added cars from Home page if featured/home is requested
+        if (featured === "true" || home === "true") {
+          conditions.push({ isUserAdded: { $ne: true } });
+        }
+
+        if (search && search.trim()) {
+          const searchRegex = new RegExp(search.trim(), "i");
+          conditions.push({
+            $or: [
+              { model: searchRegex },
+              { carName: searchRegex },
+              { location: searchRegex },
+              { category: searchRegex },
+              { pickupLocation: searchRegex },
+              { carType: searchRegex },
+            ],
+          });
+        }
+
+        if (type && type.trim() && type.trim().toLowerCase() !== "all") {
+          const typeRegex = new RegExp(type.trim(), "i");
+          conditions.push({
+            $or: [{ category: typeRegex }, { carType: typeRegex }],
+          });
+        }
+
+        if (conditions.length > 0) {
+          query = { $and: conditions };
+        }
+
+        const cars = await carCollection.find(query).sort({ createdAt: -1 }).toArray();
         res.json(cars);
       } catch (err) {
         res.status(500).json({ success: false, message: err.message });
@@ -95,6 +169,30 @@ async function run() {
 
     app.get("/cars/:id", handleGetSingleCar);
     app.get("/api/cars/:id", handleGetSingleCar);
+
+    // DELETE /cars/:id or /api/cars/:id — Delete vehicle by ID
+    const handleDeleteCar = async (req, res) => {
+      try {
+        const { id } = req.params;
+        let query = {};
+        if (ObjectId.isValid(id)) {
+          query = { _id: new ObjectId(id) };
+        } else {
+          query = { id: id };
+        }
+
+        const result = await carCollection.deleteOne(query);
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ success: false, message: "Car not found" });
+        }
+        res.json({ success: true, message: "Vehicle deleted successfully" });
+      } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+      }
+    };
+
+    app.delete("/cars/:id", handleDeleteCar);
+    app.delete("/api/cars/:id", handleDeleteCar);
 
     // Root ping route
     app.get("/", (req, res) => {
