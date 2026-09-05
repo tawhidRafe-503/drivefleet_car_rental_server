@@ -25,7 +25,7 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     console.log("Successfully connected to MongoDB!");
 
     const database = client.db("Drivefleet_Car_Platform");
