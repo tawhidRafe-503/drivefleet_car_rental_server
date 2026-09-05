@@ -1,12 +1,14 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const jwt = require("jsonwebtoken");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 5000;
+const BETTER_AUTH_SECRET = process.env.BETTER_AUTH_SECRET || process.env.ACCESS_TOKEN_SECRET || process.env.JWT_SECRET || "drivefleet_jwt_secret_2026_key";
 
 app.use(cors());
 app.use(express.json());
@@ -30,7 +32,31 @@ async function run() {
     const carCollection = database.collection("car_info");
     const userBookingCollection = database.collection("user_booking_info");
 
-    // POST /cars or /api/cars — Create new vehicle
+    // Verify BetterAuth JWT Token Middleware
+    const verifyBetterAuthToken = (req, res, next) => {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        return res.status(401).json({ success: false, message: "Unauthorized access: BetterAuth token missing" });
+      }
+
+      const token = authHeader.startsWith("Bearer ")
+        ? authHeader.split(" ")[1]
+        : authHeader;
+
+      if (!token) {
+        return res.status(401).json({ success: false, message: "Unauthorized access: Token invalid" });
+      }
+
+      jwt.verify(token, BETTER_AUTH_SECRET, (err, decoded) => {
+        if (err) {
+          return res.status(403).json({ success: false, message: "Forbidden access: Invalid or expired BetterAuth token" });
+        }
+        req.user = decoded;
+        next();
+      });
+    };
+
+    // POST /cars or /api/cars — Create new vehicle (Protected)
     const handleAddCar = async (req, res) => {
       try {
         const carData = req.body;
@@ -58,10 +84,10 @@ async function run() {
       }
     };
 
-    app.post("/cars", handleAddCar);
-    app.post("/api/cars", handleAddCar);
+    app.post("/cars", verifyBetterAuthToken, handleAddCar);
+    app.post("/api/cars", verifyBetterAuthToken, handleAddCar);
 
-    // POST /bookings or /api/bookings — Store new booking in database
+    // POST /bookings or /api/bookings — Store new booking in database (Protected)
     const handleCreateBooking = async (req, res) => {
       try {
         const bookingData = req.body;
@@ -87,13 +113,13 @@ async function run() {
       }
     };
 
-    app.post("/bookings", handleCreateBooking);
-    app.post("/api/bookings", handleCreateBooking);
+    app.post("/bookings", verifyBetterAuthToken, handleCreateBooking);
+    app.post("/api/bookings", verifyBetterAuthToken, handleCreateBooking);
 
-    // GET /bookings or /api/bookings or /bookings/my-bookings — Get bookings for user
+    // GET /bookings or /api/bookings or /bookings/my-bookings — Get bookings for user (Protected)
     const handleGetBookings = async (req, res) => {
       try {
-        const email = (req.query.email || req.query.renterEmail || "").trim();
+        const email = (req.query.email || req.query.renterEmail || req.user?.email || "").trim();
         let query = {};
         if (email) {
           query = {
@@ -114,10 +140,10 @@ async function run() {
 
     app.get("/bookings", handleGetBookings);
     app.get("/api/bookings", handleGetBookings);
-    app.get("/bookings/my-bookings", handleGetBookings);
-    app.get("/api/bookings/my-bookings", handleGetBookings);
+    app.get("/bookings/my-bookings", verifyBetterAuthToken, handleGetBookings);
+    app.get("/api/bookings/my-bookings", verifyBetterAuthToken, handleGetBookings);
 
-    // DELETE /bookings/:id or /api/bookings/:id — Cancel/Delete booking
+    // DELETE /bookings/:id or /api/bookings/:id — Cancel/Delete booking (Protected)
     const handleDeleteBooking = async (req, res) => {
       try {
         const { id } = req.params;
@@ -138,10 +164,10 @@ async function run() {
       }
     };
 
-    app.delete("/bookings/:id", handleDeleteBooking);
-    app.delete("/api/bookings/:id", handleDeleteBooking);
+    app.delete("/bookings/:id", verifyBetterAuthToken, handleDeleteBooking);
+    app.delete("/api/bookings/:id", verifyBetterAuthToken, handleDeleteBooking);
 
-    // PATCH/PUT /bookings/:id or /api/bookings/:id — Update booking details by ID
+    // PATCH/PUT /bookings/:id or /api/bookings/:id — Update booking details by ID (Protected)
     const handleUpdateBooking = async (req, res) => {
       try {
         const { id } = req.params;
@@ -178,15 +204,15 @@ async function run() {
       }
     };
 
-    app.patch("/bookings/:id", handleUpdateBooking);
-    app.patch("/api/bookings/:id", handleUpdateBooking);
-    app.put("/bookings/:id", handleUpdateBooking);
-    app.put("/api/bookings/:id", handleUpdateBooking);
+    app.patch("/bookings/:id", verifyBetterAuthToken, handleUpdateBooking);
+    app.patch("/api/bookings/:id", verifyBetterAuthToken, handleUpdateBooking);
+    app.put("/bookings/:id", verifyBetterAuthToken, handleUpdateBooking);
+    app.put("/api/bookings/:id", verifyBetterAuthToken, handleUpdateBooking);
 
-    // GET /cars/my-cars or /api/cars/my-cars — GET API to retrieve added cars for the my-cars route
+    // GET /cars/my-cars or /api/cars/my-cars — GET API to retrieve added cars for the my-cars route (Protected)
     const handleGetMyCars = async (req, res) => {
       try {
-        const email = (req.query.email || req.query.userEmail || "").trim();
+        const email = (req.query.email || req.query.userEmail || req.user?.email || "").trim();
         let query = {};
 
         if (email) {
@@ -217,8 +243,8 @@ async function run() {
       }
     };
 
-    app.get("/cars/my-cars", handleGetMyCars);
-    app.get("/api/cars/my-cars", handleGetMyCars);
+    app.get("/cars/my-cars", verifyBetterAuthToken, handleGetMyCars);
+    app.get("/api/cars/my-cars", verifyBetterAuthToken, handleGetMyCars);
 
     // GET /cars or /api/cars — Get all vehicles with search & category filter support
     const handleGetCars = async (req, res) => {
@@ -290,7 +316,7 @@ async function run() {
     app.get("/cars/:id", handleGetSingleCar);
     app.get("/api/cars/:id", handleGetSingleCar);
 
-    // PATCH/PUT /cars/:id or /api/cars/:id — Update vehicle details by ID
+    // PATCH/PUT /cars/:id or /api/cars/:id — Update vehicle details by ID (Protected)
     const handleUpdateCar = async (req, res) => {
       try {
         const { id } = req.params;
@@ -327,12 +353,12 @@ async function run() {
       }
     };
 
-    app.patch("/cars/:id", handleUpdateCar);
-    app.patch("/api/cars/:id", handleUpdateCar);
-    app.put("/cars/:id", handleUpdateCar);
-    app.put("/api/cars/:id", handleUpdateCar);
+    app.patch("/cars/:id", verifyBetterAuthToken, handleUpdateCar);
+    app.patch("/api/cars/:id", verifyBetterAuthToken, handleUpdateCar);
+    app.put("/cars/:id", verifyBetterAuthToken, handleUpdateCar);
+    app.put("/api/cars/:id", verifyBetterAuthToken, handleUpdateCar);
 
-    // DELETE /cars/:id or /api/cars/:id — Delete vehicle by ID
+    // DELETE /cars/:id or /api/cars/:id — Delete vehicle by ID (Protected)
     const handleDeleteCar = async (req, res) => {
       try {
         const { id } = req.params;
@@ -353,8 +379,8 @@ async function run() {
       }
     };
 
-    app.delete("/cars/:id", handleDeleteCar);
-    app.delete("/api/cars/:id", handleDeleteCar);
+    app.delete("/cars/:id", verifyBetterAuthToken, handleDeleteCar);
+    app.delete("/api/cars/:id", verifyBetterAuthToken, handleDeleteCar);
 
     // Root ping route
     app.get("/", (req, res) => {
